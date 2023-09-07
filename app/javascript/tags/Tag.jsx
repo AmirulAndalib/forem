@@ -25,11 +25,19 @@ export const Tag = ({ id, name, isFollowing, isHidden }) => {
   };
 
   const toggleHideButton = () => {
-    setHidden(!hidden);
-    const updatedFollowing = true;
-    setFollowing(updatedFollowing);
+    const updatedHiddenState = !hidden;
+    setHidden(updatedHiddenState);
+
+    // if the tag's new state will be hidden (clicked on the hide button) then we we set it to following.
+    // if the tags new state is to be unhidden (clicked on the unhide button) then we set it to not following.
+    const updatedFollowingState = updatedHiddenState;
+    setFollowing(updatedFollowingState);
+
     browserStoreCache('remove');
-    postFollowItem({ hidden: !hidden, following: updatedFollowing });
+    postFollowItem({
+      hidden: updatedHiddenState,
+      following: updatedFollowingState,
+    });
   };
 
   const postFollowItem = ({ following, hidden }) => {
@@ -62,8 +70,10 @@ export const Tag = ({ id, name, isFollowing, isHidden }) => {
     followingButton = (
       <button
         onClick={toggleFollowButton}
-        className={`crayons-btn ${
-          following ? 'crayons-btn--outlined' : 'crayons-btn--primary'
+        className={`${
+          following
+            ? 'crayons-btn crayons-btn--outlined'
+            : 'c-btn c-btn--primary'
         }`}
         aria-pressed={following}
         aria-label={`${followButtonLabel} tag: ${name}`}
@@ -74,13 +84,11 @@ export const Tag = ({ id, name, isFollowing, isHidden }) => {
   }
 
   return (
-    <div>
+    <div className="flex gap-2">
       {followingButton}
       <button
         onClick={toggleHideButton}
-        className={`crayons-btn ${
-          hidden ? 'crayons-btn--danger' : 'crayons-btn--ghost'
-        }`}
+        className={`c-btn ${hidden ? 'c-btn--primary c-btn--destructive' : ''}`}
         aria-label={`${hideButtonLabel} tag: ${name}`}
       >
         {hideButtonLabel}
