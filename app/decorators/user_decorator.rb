@@ -119,7 +119,7 @@ class UserDecorator < ApplicationDecorator
 
   # returns true if the user has been suspended and has no content
   def fully_banished?
-    articles_count.zero? && comments_count.zero? && suspended?
+    articles_count.zero? && comments_count.zero? && spam_or_suspended?
   end
 
   def considered_new?
@@ -136,7 +136,7 @@ class UserDecorator < ApplicationDecorator
 
   # Returns the users profile summary or a placeholder text
   def profile_summary
-    profile.summary.presence || DEFAULT_PROFILE_SUMMARY.call
+    profile&.summary.presence || DEFAULT_PROFILE_SUMMARY.call
   end
 
   delegate :display_sponsors, to: :setting

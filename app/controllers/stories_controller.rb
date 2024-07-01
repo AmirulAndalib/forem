@@ -26,7 +26,6 @@ class StoriesController < ApplicationController
 
   def index
     @page = (params[:page] || 1).to_i
-
     return handle_user_or_organization_or_podcast_or_page_index if params[:username]
 
     handle_base_index
@@ -42,12 +41,22 @@ class StoriesController < ApplicationController
     elsif (@podcast = Podcast.available.find_by(slug: params[:username]))
       @episode = @podcast.podcast_episodes.available.find_by!(slug: params[:slug])
       handle_podcast_show
+    elsif (@page = Page.find_by(slug: "#{params[:username]}/#{params[:slug]}", is_top_level_path: true))
+      handle_page_display
     else
       not_found
     end
   end
 
   private
+
+  # for spam content we need to remove cache control headers to access current_user to check admin access
+  # so that admins could have access to spam articles and profiles
+  def check_admin_access
+    unset_cache_control_headers if user_signed_in?
+    is_admin = user_signed_in? && current_user&.any_admin?
+    not_found unless is_admin
+  end
 
   def set_user_limit
     @user_limit = 50
@@ -171,6 +180,9 @@ class StoriesController < ApplicationController
       .order(published_at: :desc).page(@page).per(8))
     @organization_article_index = true
     @organization_users = @organization.users.order(badge_achievements_count: :desc)
+    if !user_signed_in? && @organization_users.sum(:score).negative? && @stories.sum(&:score) <= 0
+      not_found
+    end
     set_organization_json_ld
     set_surrogate_key_header "articles-org-#{@organization.id}"
     render template: "organizations/show"
@@ -184,6 +196,9 @@ class StoriesController < ApplicationController
     end
     not_found if @user.username.include?("spam_") && @user.decorate.fully_banished?
     not_found unless @user.registered
+
+    check_admin_access if @user.spam?
+
     if !user_signed_in? && (@user.suspended? && @user.has_no_published_content?)
       not_found
     end
@@ -195,17 +210,8 @@ class StoriesController < ApplicationController
 
     assign_user_github_repositories
 
-    # @badges_limit is here and is set to 6 because it determines how many badges we will display
-    # on Profile sidebar widget. If user has more badges, we hide them and let them be revealed
-    # by clicking "See more" button (because we want to save space etc..). But why 6 exactly?
-    # To make that widget look good:
-    #   - On desktop it will have 3 rows, each row with 2 badges.
-    #   - On mobile it will have 2 rows, each row with 3 badges.
-    # So it's always 6. If we make it higher or lower number, we would have to sacrifice UI:
-    #   - Let's say it's `4`. On mobile it would display two rows: 1st with 3 badges and
-    # 2nd with 1 badge (!) <-- and that would look off.
-    @badges_limit = 6
-    @profile = @user.profile.decorate
+    @grouped_badges = @user.badge_achievements.order(id: :desc).includes(:badge).group_by(&:badge_id)
+    @profile = @user&.profile&.decorate || Profile.create(user: @user)&.decorate
     @is_user_flagged = Reaction.where(user_id: session_current_user_id, reactable: @user).any?
 
     set_surrogate_key_header "articles-user-#{@user.id}"
@@ -263,6 +269,8 @@ class StoriesController < ApplicationController
     not_found if permission_denied?
     not_found unless @article.user
 
+    check_admin_access if @article.user.spam?
+
     @pinned_article_id = PinnedArticle.id
 
     @article_show = true
@@ -271,6 +279,9 @@ class StoriesController < ApplicationController
     @user = @article.user
     @organization = @article.organization
     @comments_order = fetch_sort_order
+
+    @comments_count = Comments::Count.call(@article)
+
     if @article.collection
       @collection = @article.collection
 
@@ -304,7 +315,7 @@ class StoriesController < ApplicationController
     @comments = []
     return unless user_signed_in? && @user.comments_count.positive?
 
-    @comments = @user.comments.where(deleted: false)
+    @comments = @user.comments.good_quality.where(deleted: false)
       .order(created_at: :desc)
       .includes(commentable: [:podcast])
       .limit(comment_count)
@@ -428,7 +439,7 @@ class StoriesController < ApplicationController
     [
       @user.twitter_username.present? ? "https://twitter.com/#{@user.twitter_username}" : nil,
       @user.github_username.present? ? "https://github.com/#{@user.github_username}" : nil,
-      @user.profile.website_url,
+      @user&.profile&.website_url,
     ].compact_blank
   end
 

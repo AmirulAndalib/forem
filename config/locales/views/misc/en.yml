@@ -11,6 +11,7 @@ en:
       desc: Receive badges for being awesome! Click on a badge to see how you can earn it.
       icon_close: Close
       gotit: Got it
+      indicator: "%{user} earned this badge %{number} times."
     campaign:
       subtitle: Stories (%{count})
       view: See all posts
@@ -116,12 +117,13 @@ en:
         infinity: Infinity
       readers: Readers Summary
       followers: New Followers Summary
-      reactions: "Reactions Summary ❤🦄🔖"
-      comments: "Comments Summary 💬"
+      reactions: "Reactions Summary"
+      comments: "Comments Summary"
       traffic:
-        text: "Traffic Source Summary 🚦"
+        text: "Traffic Source Summary"
         source: Source
         views: Views
+      reactions_history: "Reactions History"
     sticky:
       joined: Joined
       default_cta: Learn more

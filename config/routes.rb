@@ -17,6 +17,16 @@ Rails.application.routes.draw do
     delete "/sign_out", to: "devise/sessions#destroy"
   end
 
+  # This route makes default Ahoy Email redirect URLs available to us
+  # However, we monkeypatch this behavior in config/initializers/ahoy_email.rb so this
+  # routes is not currently where emails pass through.
+  mount AhoyEmail::Engine => "/ahoy"
+
+  # Custom controller for tracking clicks asynchronously
+  namespace :ahoy do
+    post "email_clicks", to: "email_clicks#create"
+  end
+
   get "/r/mobile", to: "deep_links#mobile"
   get "/.well-known/apple-app-site-association", to: "deep_links#aasa"
 
@@ -47,8 +57,12 @@ Rails.application.routes.draw do
         put "/articles/:id/unpublish", to: "articles#unpublish", as: :article_unpublish
         put "/users/:id/unpublish", to: "users#unpublish", as: :user_unpublish
 
+        get "/users/search", to: "users#search"
+
         post "/reactions", to: "reactions#create"
         post "/reactions/toggle", to: "reactions#toggle"
+
+        resources :recommended_articles_lists, only: %i[index show create update]
 
         resources :billboards, only: %i[index show create update] do
           put "unpublish", on: :member
@@ -69,11 +83,11 @@ Rails.application.routes.draw do
         resources :organizations, only: %i[index create update destroy]
 
         scope("/users/:id") do
-          constraints(role: /suspend|suspended|limited/) do
+          constraints(role: /suspend|suspended|limited|spam|trusted/) do
             put "/:role", to: "user_roles#update", as: "user_add_role"
           end
 
-          constraints(role: /limited/) do
+          constraints(role: /limited|spam|trusted/) do
             delete "/:role", to: "user_roles#destroy", as: "user_remove_role"
           end
         end
@@ -112,6 +126,10 @@ Rails.application.routes.draw do
     end
     resources :comment_mutes, only: %i[update]
     resources :users, only: %i[index show], defaults: { format: :json } do # internal API
+      member do
+        put "spam", to: "users#toggle_spam"
+        delete "spam", to: "users#toggle_spam"
+      end
       collection do
         resources :devices, only: %i[create destroy]
       end
@@ -241,6 +259,10 @@ Rails.application.routes.draw do
     post "users/api_secrets", to: "api_secrets#create", as: :users_api_secrets
     delete "users/api_secrets/:id", to: "api_secrets#destroy", as: :users_api_secret
     post "users/update_password", to: "users#update_password", as: :user_update_password
+
+    # Internal Admin API
+    # put "/users/:id/spam", to: "users#toggle_spam", as: :user_toggle_spam
+    # delete "/users/:id/spam", to: "users#toggle_spam", as: :user_toggle_spam
 
     # The priority is based upon order of creation: first created -> highest priority.
     # See how all your routes lay out with "rake routes".
@@ -390,8 +412,15 @@ Rails.application.routes.draw do
     get "/:username/:slug", to: "stories#show"
     get "/:sitemap", to: "sitemaps#show",
                      constraints: { format: /xml/, sitemap: /sitemap-.+/ }
-    get "/:username", to: "stories#index", as: "user_profile"
-
+    get "/:username", to: "stories#index", as: "user_profile", # No txt format
+                      constraints: { format: /html/ }
+    get "/:slug", to: "pages#show",
+                  constraints: { format: /txt/ }
+    get "/:slug_0/:slug_1", to: "pages#show", as: :page_0_1
+    get "/:slug_0/:slug_1/:slug_2", to: "pages#show", as: :page_0_1_2
+    get "/:slug_0/:slug_1/:slug_2/:slug_3", to: "pages#show", as: :page_0_1_2_3
+    get "/:slug_0/:slug_1/:slug_2/:slug_3/:slug_4", to: "pages#show", as: :page_0_1_2_3_4
+    get "/:slug_0/:slug_1/:slug_2/:slug_3/:slug_4/:slug_5", to: "pages#show", as: :page_0_1_2_3_4_5
     root "stories#index"
   end
 end

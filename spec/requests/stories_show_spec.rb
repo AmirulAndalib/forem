@@ -100,6 +100,13 @@ RSpec.describe "StoriesShow" do
       expect(response.body).not_to include("<span class=\"fs-xl color-base-70 block\">Hey this is a test</span>")
     end
 
+    it "renders proper wrapper content clases" do
+      get article.path
+      expect(response.body)
+        .to include(" #{article.decorate.cached_tag_list_array.map { |tag| "articletag-#{tag}" }.join(' ')}")
+      expect(response.body).to include(" articleuser-#{article.user_id}")
+    end
+
     ###
 
     it "renders date-no-year if article published this year" do
@@ -111,18 +118,6 @@ RSpec.describe "StoriesShow" do
       article.update_column(:published_at, 1.year.ago)
       get article.path
       expect(response.body).not_to include "date-no-year"
-    end
-
-    it "renders user payment pointer if set" do
-      article.user.update_column(:payment_pointer, "this-is-a-pointer")
-      get article.path
-      expect(response.body).to include "author-payment-pointer"
-      expect(response.body).to include "this-is-a-pointer"
-    end
-
-    it "does not render payment pointer if not set" do
-      get article.path
-      expect(response.body).not_to include "author-payment-pointer"
     end
 
     it "renders second and third users if present" do

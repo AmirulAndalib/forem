@@ -5,7 +5,7 @@ module Images
 
       if imgproxy_enabled?
         imgproxy(img_src, **kwargs)
-      elsif cloudinary_enabled?
+      elsif cloudinary_enabled? && !cloudflare_contextually_preferred?(img_src)
         cloudinary(img_src, **kwargs)
       elsif cloudflare_enabled?
         cloudflare(img_src, **kwargs)
@@ -122,12 +122,24 @@ module Images
     end
 
     def self.extract_suffix_url(full_url)
-      prefix = "https://#{ApplicationConfig['CLOUDFLARE_IMAGES_DOMAIN']}/cdn-cgi/image"
-      return full_url unless full_url&.starts_with?(prefix)
+      return full_url unless full_url&.starts_with?(cloudflare_prefix)
 
       uri = URI.parse(full_url)
       match = uri.path.match(%r{https?.+})
       CGI.unescape(match[0]) if match
+    end
+
+    # This is a feature-flagged Cloudflare preference for hosted images only — works specifically with S3-hosted image sources.
+    def self.cloudflare_contextually_preferred?(img_src)
+      return false unless cloudflare_enabled?
+      return false unless FeatureFlag.enabled?(:cloudflare_preferred_for_hosted_images)
+
+      img_src&.start_with?("https://#{ApplicationConfig['AWS_BUCKET_NAME']}.s3.amazonaws.com") ||
+        (img_src&.start_with?(cloudflare_prefix) && !img_src&.end_with?("/"))
+    end
+
+    def self.cloudflare_prefix
+      "https://#{ApplicationConfig['CLOUDFLARE_IMAGES_DOMAIN']}/cdn-cgi/image"
     end
   end
 end

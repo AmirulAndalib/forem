@@ -4,6 +4,7 @@ module Homepage
       cached_tag_list
       comments_count
       crossposted_at
+      displayed_comments_count
       id
       organization_id
       path
@@ -72,6 +73,7 @@ module Homepage
       @relation = @relation.cached_tagged_with_any(tags) if tags.any?
       @relation = @relation.not_cached_tagged_with_any(hidden_tags) if hidden_tags.any?
       @relation = @relation.includes(:distinct_reaction_categories)
+      @relation = @relation.where("score >= 0") # Never return negative score articles
 
       relation
     end

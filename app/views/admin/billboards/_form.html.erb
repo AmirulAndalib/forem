@@ -18,6 +18,11 @@
     </div>
 
     <div class="crayons-field">
+      <%= label_tag :custom_display_label, "Custom author display name:", class: "crayons-field__label" %>
+      <%= text_field_tag :custom_display_label, @billboard.custom_display_label, size: "100x5", class: "crayons-textfield", autocomplete: "off" %>
+    </div>
+
+    <div class="crayons-field">
       <%= label_tag :body_markdown, "Body Content:", class: "crayons-field__label" %>
       <%= text_area_tag :body_markdown, @billboard.body_markdown, size: "100x5", class: "crayons-textfield" %>
     </div>
@@ -37,12 +42,17 @@
       <%= select_tag :placement_area, options_for_select(billboards_placement_area_options_array, selected: @billboard.placement_area), include_blank: "Select...", class: "crayons-select js-placement-area" %>
     </div>
 
+    <div class="crayons-field billboard-requires-precision-targeting hidden">
+      <%= label_tag :browser_context, "Browser context:", class: "crayons-field__label" %>
+      <%= select_tag :browser_context, options_for_select([["All browsers", "all_browsers"], ["Desktop", "desktop"], ["Mobile web", "mobile_web"], ["Mobile in-app", "mobile_in_app"]], selected: @billboard.browser_context), class: "crayons-select js-placement-area" %>
+    </div>
+
     <div class="crayons-field">
       <div id="billboard-targeted-tags"></div>
     </div>
 
     <% if FeatureFlag.enabled?(Geolocation::FEATURE_FLAG) %>
-      <div class="crayons-field">
+      <div class="crayons-field billboard-requires-precision-targeting hidden">
         <%= label_tag :target_geolocations, "Target Geolocations:", class: "crayons-field__label" %>
         <%= text_field_tag :target_geolocations, @billboard.target_geolocations.map(&:to_iso3166).join(", "), class: "crayons-textfield", placeholder: "US-NY, CA-ON", autocomplete: "off" %>
       </div>
@@ -132,7 +142,7 @@
     </div>
   </div>
   <div>
-    <div class="crayons-card crayons-card--secondary crayons-sponsorship text-styles text-styles--billboard">
+    <div class="crayons-card crayons-card--secondary crayons-bb text-styles text-styles--billboard">
       <% if @billboard.persisted? %>
         <%= @billboard.processed_html.html_safe %>
       <% else %>
@@ -152,4 +162,4 @@
   </div>
 </div>
 
-<%= javascript_packs_with_chunks_tag "admin/billboards", defer: true %>
+<%= javascript_include_tag "admin/billboards", defer: true %>

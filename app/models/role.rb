@@ -1,6 +1,7 @@
 class Role < ApplicationRecord
   ROLES = %w[
     admin
+    augmented
     codeland_admin
     comment_suspended
     creator
@@ -11,6 +12,7 @@ class Role < ApplicationRecord
     super_admin
     support_admin
     suspended
+    spam
     tag_moderator
     tech_admin
     trusted
@@ -19,7 +21,7 @@ class Role < ApplicationRecord
   ].freeze
 
   ROLES.each do |role|
-    define_method("#{role}?") do
+    define_method(:"#{role}?") do
       name == role
     end
   end
