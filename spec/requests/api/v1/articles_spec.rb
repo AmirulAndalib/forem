@@ -34,7 +34,7 @@ RSpec.describe "Api::V1::Articles" do
         type_of id title description cover_image readable_publish_date social_image
         tag_list tags slug path url canonical_url comments_count public_reactions_count positive_reactions_count
         collection_id created_at edited_at crossposted_at published_at last_comment_at
-        published_timestamp user organization flare_tag reading_time_minutes
+        published_timestamp user organization flare_tag reading_time_minutes language subforem_id
       ]
 
       expect(response.parsed_body.first.keys).to match_array index_keys
@@ -349,6 +349,7 @@ RSpec.describe "Api::V1::Articles" do
         tag_list tags slug path url canonical_url comments_count public_reactions_count positive_reactions_count
         collection_id created_at edited_at crossposted_at published_at last_comment_at
         published_timestamp body_html body_markdown user organization flare_tag reading_time_minutes
+        language subforem_id
       ]
 
       expect(response.parsed_body.keys).to match_array show_keys
@@ -621,7 +622,7 @@ RSpec.describe "Api::V1::Articles" do
     end
 
     describe "when authorized" do
-      let(:default_params) { { body_markdown: "" } }
+      let(:default_params) { { body_markdown: "", main_image: "" } }
       let(:tomorrow) { Date.tomorrow }
       let(:formatted_date) { tomorrow.strftime("%Y-%m-%d") }
 
@@ -771,6 +772,19 @@ RSpec.describe "Api::V1::Articles" do
         article = Article.find(response.parsed_body["id"])
         expect(article.collection).to eq(Collection.find_by(slug: series))
         expect(article.collection.user).to eq(user)
+      end
+
+      it "creates an article belonging to a subforem" do
+        subforem = create(:subforem)
+        second_subforem = create(:subforem, domain: "other-domain.com")
+        post_article(
+          title: Faker::Book.title,
+          body_markdown: "Yo ho ho",
+          subforem_id: second_subforem.id,
+        )
+        expect(response).to have_http_status(:created)
+        article = Article.find(response.parsed_body["id"])
+        expect(article.subforem).to eq(second_subforem)
       end
 
       it "creates article within a series using the front matter" do
@@ -982,6 +996,21 @@ RSpec.describe "Api::V1::Articles" do
         expect(response).to have_http_status(:ok)
       end
 
+      it "lets a super admin update an article's clickbait_score" do
+        user.add_role(:super_admin)
+        article = create(:article, user: create(:user))
+        params = { article: { title: "foobar", clickbait_score: 0.3 } }.to_json
+        put "/api/articles/#{article.id}", params: params, headers: auth_headers
+        expect(article.reload.clickbait_score).to eq(0.3)
+      end
+
+      it "does not update clickbait_score for non super-admins" do
+        article = create(:article, user: create(:user))
+        params = { article: { title: "foobar", clickbait_score: 0.3 } }.to_json
+        put "/api/articles/#{article.id}", params: params, headers: auth_headers
+        expect(article.reload.clickbait_score).not_to eq(0.3)
+      end
+
       it "does not update title if only given a title because the article has a front matter" do
         put_article(title: Faker::Book.title)
         expect(response).to have_http_status(:ok)
@@ -1034,6 +1063,27 @@ RSpec.describe "Api::V1::Articles" do
           )
           article.reload
         end.to change(article, :body_markdown) && change(article, :cached_tag_list)
+      end
+
+      it "does not update the tags if not included in the request" do
+        article.update_column(:cached_tag_list, "meta, discussion")
+        expect do
+          put_article(
+            body_markdown: "something here",
+          )
+          article.reload
+        end.not_to change(article, :cached_tag_list)
+      end
+
+      it "does update the tags if empty string is provided" do
+        article.update_column(:cached_tag_list, "meta, discussion")
+        expect do
+          put_article(
+            body_markdown: "something here",
+            tags: %w[],
+          )
+          article.reload
+        end.to change(article, :cached_tag_list)
       end
 
       it "assigns the article to a new series belonging to the user" do
@@ -1317,6 +1367,7 @@ RSpec.describe "Api::V1::Articles" do
           tag_list tags slug path url canonical_url comments_count public_reactions_count positive_reactions_count
           collection_id created_at edited_at crossposted_at published_at last_comment_at
           published_timestamp user organization flare_tag reading_time_minutes body_markdown
+          language subforem_id
         ]
 
         expect(response.parsed_body.first.keys).to match_array index_keys
@@ -1335,7 +1386,7 @@ RSpec.describe "Api::V1::Articles" do
           type_of id title description cover_image readable_publish_date social_image
           tag_list tags slug path url canonical_url comments_count public_reactions_count positive_reactions_count
           collection_id created_at edited_at crossposted_at published_at last_comment_at
-          published_timestamp user organization flare_tag reading_time_minutes
+          published_timestamp user organization flare_tag reading_time_minutes language subforem_id
         ]
 
         expect(response.parsed_body.first.keys).to match_array keys

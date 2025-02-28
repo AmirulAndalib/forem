@@ -5,8 +5,11 @@
 </div>
 <br>
 <p align="center">
-  <a href="https://github.com/forem/forem/actions/workflows/ci-cd.yml">
-    <img src="https://github.com/forem/forem/actions/workflows/ci-cd.yml/badge.svg" alt="Build Status">
+  <a href="https://github.com/forem/forem/actions/workflows/ci.yml">
+    <img src="https://github.com/forem/forem/actions/workflows/ci.yml/badge.svg" alt="Build Status">
+  </a>
+  <a href="https://github.com/forem/forem/actions/workflows/cd.yml">
+    <img src="https://github.com/forem/forem/actions/workflows/cd.yml/badge.svg" alt="Build Status">
   </a>
   <img src="https://img.shields.io/github/commit-activity/w/forem/forem" alt="GitHub commit activity">
   <a href="https://github.com/forem/forem/issues?q=is%3Aissue+is%3Aopen+label%3A%22ready+for+dev%22">
@@ -46,27 +49,27 @@ within our community. ❤️
 - [Getting Started](#getting-started)
   - [Installation Documentation](#installation-documentation)
 - [Developer Documentation](#developer-documentation)
-- [Vulnerability disclosure](#vulnerability-disclosure)
+- [Vulnerability Disclosure](#vulnerability-disclosure)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
 
 ## Community
 
 For a place to have open discussions on features, voice your ideas, or get help
-with general questions please visit our community at
-[forem.dev](https://forem.dev/).
+with general questions please visit the
+[discussions](https://github.com/forem/forem/discussions) section.
 
 ## Contributing
 
 We encourage you to contribute to Forem! Please check out the
 [Contributing to Forem guide](https://developers.forem.com/contributing-guide/forem)
-for guidelines about how to proceed.
+for guidelines on how to proceed.
 
 ## Getting Started
 
 This section provides a high-level quick start guide. If you're looking for a
 more thorough installation guide (for example
-[with macOS](https://developers.forem.com/getting-started/installation/mac),
+[with macOS](https://developers.forem.com/getting-started/installation/mac)),
 you'll want to refer to our complete
 [Developer Documentation](https://developers.forem.com/).
 
@@ -90,7 +93,7 @@ Please see our installation guides:
 
 [Check out our dedicated docs page for more technical documentation](https://developers.forem.com).
 
-## Vulnerability disclosure
+## Vulnerability Disclosure
 
 Forem is the open source software which powers [DEV](https://dev.to).
 
@@ -122,7 +125,8 @@ Agreement, which they generously made available to the public domain under
 Creative Commons CC0 1.0 Universal.
 
 Any questions, please refer to our
-[license FAQ](https://developers.forem.com/licensing/) doc or email yo@dev.to.
+[license FAQ](https://developers.forem.com/licensing/) doc or email
+support@dev.to.
 
 <br>
 

@@ -204,6 +204,15 @@
         margin-right: var(--su-4);
       }
     }
+
+    @media (max-width: $breakpoint-s) {
+      .items-center {
+        width: 100%;
+      }
+      .crayons-btn {
+        width: 100%;
+      }
+    }
   }
 
   &__title {
@@ -231,6 +240,19 @@
 
     &--body {
       @include animationSlide(slideInBody);
+    }
+
+    .pl-6 {
+      padding-left: var(--su-6);
+    }
+
+    .list-disc {
+      list-style-type: disc;
+      //list-style-position: inside;
+
+      li {
+        margin-bottom: 0.5rem;
+      }
     }
   }
 }

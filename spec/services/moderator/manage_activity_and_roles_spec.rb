@@ -46,6 +46,16 @@ RSpec.describe Moderator::ManageActivityAndRoles, type: :service do
       end
     end
 
+    context "when user is in spam role" do
+      before { user.add_role(:spam) }
+
+      it "adding #{status} also removes the spam role" do
+        expect(user.roles.pluck(:name)).to include("spam") # confirm assumptions
+        manage_roles_for user, user_status: status
+        expect(user.roles.pluck(:name)).not_to include("spam") # confirm assumptions
+      end
+    end
+
     context "when user is in comment_suspended role" do
       before { user.add_role(:comment_suspended) }
 
@@ -138,16 +148,23 @@ RSpec.describe Moderator::ManageActivityAndRoles, type: :service do
   it_behaves_like "elevated role", "Tech Admin"
 
   it_behaves_like "negative role", "Suspended"
+  it_behaves_like "negative role", "Spam"
   it_behaves_like "negative role", "Limited"
   it_behaves_like "negative role", "Warned"
 
   context "when user is in suspended role" do
-    before { user.add_role(:suspended) }
-
     it "adding warned removes the suspended role" do
+      user.add_role(:suspended)
       expect(user.roles.pluck(:name)).to include("suspended") # confirm assumptions
       manage_roles_for user, user_status: "Warned"
       expect(user.roles.pluck(:name)).not_to include("suspended") # confirm assumptions
+    end
+
+    it "adding warned removes the spam role" do
+      user.add_role(:spam)
+      expect(user.roles.pluck(:name)).to include("spam")
+      manage_roles_for user, user_status: "Warned"
+      expect(user.roles.pluck(:name)).not_to include("spam")
     end
   end
 
@@ -157,6 +174,12 @@ RSpec.describe Moderator::ManageActivityAndRoles, type: :service do
     expect(user).to be_limited
     manage_roles_for(user, user_status: "Good standing")
     expect(user).not_to be_limited
+  end
+
+  it "updates user to base subscriber" do
+    expect(user).not_to be_base_subscriber
+    manage_roles_for(user, user_status: "Base Subscriber")
+    expect(user).to be_base_subscriber
   end
 
   it "updates user to super admin" do
@@ -230,6 +253,95 @@ RSpec.describe Moderator::ManageActivityAndRoles, type: :service do
 
       expect(Rails.cache).not_to have_received(:delete)
         .with(Rack::Attack::ADMIN_API_CACHE_KEY)
+    end
+  end
+
+  describe "removes reports when adding the spam role" do
+    let(:spam_user) { create(:user) }
+    let(:spam_article) { create(:article, user: spam_user) }
+    let!(:report) do
+      create(:feedback_message, category: "spam", status: "Open", reported_url: URL.url(spam_article.path))
+    end
+
+    it "calls ResolveSpamReports" do
+      allow(Users::ResolveSpamReports).to receive(:call)
+      sidekiq_perform_enqueued_jobs do
+        manage_roles_for(spam_user, user_status: "Spam")
+      end
+      expect(Users::ResolveSpamReports).to have_received(:call).with(spam_user)
+    end
+
+    it "actually removes the report" do
+      sidekiq_perform_enqueued_jobs do
+        manage_roles_for(spam_user, user_status: "Spam")
+      end
+      expect(report.reload.status).to eq("Resolved")
+    end
+  end
+
+  describe "confirms flag reactions when adding the spam role" do
+    let(:spam_user) { create(:user) }
+    let(:spam_article) { create(:article, user: spam_user) }
+    let!(:flag) do
+      create(:reaction, category: "vomit", status: "valid", reactable: spam_article, user: admin)
+    end
+
+    it "schedules ConfirmFlagReactionsWorker" do
+      sidekiq_assert_enqueued_with(
+        job: Users::ConfirmFlagReactionsWorker,
+        args: [spam_user.id],
+      ) do
+        manage_roles_for(spam_user, user_status: "Spam")
+      end
+    end
+
+    it "calls ConfirmFlagReactionsWorker" do
+      allow(Users::ConfirmFlagReactions).to receive(:call)
+      sidekiq_perform_enqueued_jobs do
+        manage_roles_for(spam_user, user_status: "Spam")
+      end
+      expect(Users::ConfirmFlagReactions).to have_received(:call).with(spam_user)
+    end
+
+    it "actually confirms the flag" do
+      sidekiq_perform_enqueued_jobs do
+        manage_roles_for(spam_user, user_status: "Spam")
+      end
+      expect(flag.reload.status).to eq("confirmed")
+    end
+  end
+
+  describe "busts user profile header cache when adding the spam role" do
+    it "touches profile" do
+      spam_user = create(:user)
+      profile = instance_double(Profile)
+      allow(spam_user).to receive(:profile).and_return(profile)
+      allow(profile).to receive(:touch)
+      manage_roles_for(spam_user, user_status: "Spam")
+      expect(profile).to have_received(:touch)
+    end
+  end
+
+  describe "removes notifications when adding the spam role" do
+    let(:nice_article) { create(:article, user: user) }
+    let(:spam_user) { create(:user) }
+    let(:spam_article) { create(:article, user: spam_user) }
+    let(:spam_follow) { create(:follow, follower: spam_user, followable: user) }
+    let(:spam_comment) { create(:comment, user: spam_user, commentable: nice_article) }
+
+    before do
+      create(:notification, notifiable: spam_comment, user: user)
+      create(:notification, notifiable: spam_article, action: "Published", user: user)
+      create(:notification, notifiable: spam_follow, user: user)
+    end
+
+    it "removes notifications related to the spammer" do
+      expect(Notification.count).to eq(3)
+      expect do
+        sidekiq_perform_enqueued_jobs do
+          manage_roles_for(spam_user, user_status: "Spam")
+        end
+      end.to change(Notification, :count).by(-3)
     end
   end
 

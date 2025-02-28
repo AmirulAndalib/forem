@@ -23,7 +23,7 @@ function saveTags(selectionString) {
 /**
  * Shows and Renders a Tags preact component for the Targeted Tag(s) field
  */
-function showTagsField() {
+function showPrecisionFields() {
   const billboardsTargetedTags = document.getElementById(
     'billboard-targeted-tags',
   );
@@ -35,17 +35,33 @@ function showTagsField() {
       billboardsTargetedTags,
     );
   }
+
+  const billboardPrecisionElements = document.querySelectorAll(
+    '.billboard-requires-precision-targeting',
+  );
+
+  billboardPrecisionElements.forEach((element) => {
+    element?.classList.remove('hidden');
+  });
 }
 
 /**
  * Hides the Targeted Tag(s) field
  */
-function hideTagsField() {
+function hidePrecisionFields() {
   const billboardsTargetedTags = document.getElementById(
     'billboard-targeted-tags',
   );
 
   billboardsTargetedTags?.classList.add('hidden');
+
+  const billboardPrecisionElements = document.querySelectorAll(
+    '.billboard-requires-precision-targeting',
+  );
+
+  billboardPrecisionElements.forEach((element) => {
+    element?.classList.add('hidden');
+  });
 }
 
 /**
@@ -75,30 +91,24 @@ function defaultTagValues() {
 }
 
 function displayUserTargets() {
-  const userTargetField = document.getElementsByClassName(
-    'js-audience-segment',
-  )[0].parentElement;
-  if (userTargetField) {
-    userTargetField.classList.remove('hidden');
-  }
+  const userTargetFields = document.getElementsByClassName('js-user-target');
+  Array.from(userTargetFields).forEach((field) => {
+    field.parentElement.classList.remove('hidden');
+  });
 }
 
 function hideUserTargets() {
-  const userTargetField = document.getElementsByClassName(
-    'js-audience-segment',
-  )[0].parentElement;
-  if (userTargetField) {
-    userTargetField.classList.add('hidden');
-  }
+  const userTargetFields = document.getElementsByClassName('js-user-target');
+  Array.from(userTargetFields).forEach((field) => {
+    field.parentElement.classList.add('hidden');
+  });
 }
 
 function clearUserTargetSelection() {
-  const userTargetSelect = document.getElementsByClassName(
-    'js-audience-segment',
-  )[0];
-  if (userTargetSelect) {
-    userTargetSelect.value = '';
-  }
+  const userTargetSelects = document.getElementsByClassName('js-user-target');
+  Array.from(userTargetSelects).forEach((select) => {
+    select.value = '';
+  });
 }
 
 /**
@@ -140,24 +150,32 @@ function clearExcludeIds() {
  */
 document.ready.then(() => {
   const select = document.getElementsByClassName('js-placement-area')[0];
-  const articleSpecificPlacement = ['post_comments', 'post_sidebar'];
-  const targetedTagPlacements = [
+  const articleSpecificPlacement = [
     'post_comments',
     'post_sidebar',
+    'post_fixed_bottom',
+  ];
+  const targetedTagPlacements = [
+    'post_fixed_bottom',
+    'post_comments',
+    'post_sidebar',
+    'sidebar_right',
+    'sidebar_right_second',
+    'sidebar_right_third',
     'feed_first',
     'feed_second',
     'feed_third',
   ];
 
   if (targetedTagPlacements.includes(select.value)) {
-    showTagsField();
+    showPrecisionFields();
   }
 
   select.addEventListener('change', (event) => {
     if (targetedTagPlacements.includes(event.target.value)) {
-      showTagsField();
+      showPrecisionFields();
     } else {
-      hideTagsField();
+      hidePrecisionFields();
       clearTagList();
     }
   });
