@@ -75,7 +75,14 @@ export class ArticleForm extends Component {
 
   constructor(props) {
     super(props);
-    const { article, version, siteLogo, schedulingEnabled, coverImageHeight, coverImageCrop } = this.props;
+    const {
+      article,
+      version,
+      siteLogo,
+      schedulingEnabled,
+      coverImageHeight,
+      coverImageCrop,
+    } = this.props;
     let { organizations } = this.props;
     this.article = JSON.parse(article);
     organizations = organizations ? JSON.parse(organizations) : null;
@@ -401,14 +408,16 @@ export class ArticleForm extends Component {
     }
   };
 
-  switchHelpContext = ({ target }) => {
-    this.setState({
-      ...this.setCommonProps({
-        helpFor: target.id,
-        helpPosition: target.getBoundingClientRect().y,
-      }),
-    });
-  };
+  switchHelpContext = (event, override = null) => {
+    if (!this.state.previewShowing) {
+      const id = override || event.target.id;
+      this.setState({
+        ...this.setCommonProps({
+          helpFor: id,
+          helpPosition: event.target.getBoundingClientRect().y,
+        }),
+      });
+  }};
 
   render() {
     const {
@@ -493,7 +502,7 @@ export class ArticleForm extends Component {
             switchHelpContext={this.switchHelpContext}
             coverImageHeight={coverImageHeight}
             coverImageCrop={coverImageCrop}
-            />
+          />
         )}
 
         <Help
@@ -538,6 +547,7 @@ export class ArticleForm extends Component {
           onConfigChange={this.handleConfigChange}
           submitting={submitting}
           previewLoading={previewLoading}
+          switchHelpContext={this.switchHelpContext}
         />
 
         <KeyboardShortcuts

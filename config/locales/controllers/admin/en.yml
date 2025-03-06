@@ -8,7 +8,7 @@ en:
     badge_achievements_controller:
       deleted: Badge achievement has been deleted!
       rewarded: Badges are being rewarded. The task will finish shortly.
-      congrats: Congrats!
+      congrats: Congrats on your achievement! 🎉 And thank you for being such a vital part of %{community}!
       award: Please choose a badge to award
       wrong: Something went wrong.
     badges_controller:
@@ -33,6 +33,13 @@ en:
       deleted: Billboard has been deleted!
       updated: Billboard has been updated!
       wrong: Something went wrong with deleting the Billboard.
+    emails_controller:
+      created: Emails has been created!
+      drafted: Email has been drafted!
+      activated: Email has been activated!
+      deleted: Email has been deleted!
+      updated: Email has been updated!
+      wrong: Something went wrong with deleting the Email.
     gdpr_delete_requests_controller:
       deleted: Successfully marked as deleted
     extensions_controller:
@@ -110,9 +117,13 @@ en:
       confirmation: My username is @%{username} and this action is 100% safe and appropriate.
     spaces_controller:
       update_success: Space has been updated.
+    subforems_controller:
+      created: Subforum has been created!
+      updated: Subforum has been updated!
+      deleted: Subforum has been deleted!
     tags:
       moderators_controller:
-        not_found: 'User ID #%{user_id} was not found'
+        not_found: 'Username "%{username}" was not found'
         not_found_or: 'User ID #%{user_id} was not found, or their account has errors: %{errors}'
         removed: '@%{username} - ID #%{user_id} was removed as a tag moderator.'
         added: '%{username} was added as a tag moderator!'
@@ -128,7 +139,9 @@ en:
       exported: Data exported to the %{receiver}. The job will complete momentarily.
       email_fail: Email failed to send!
       email_sent: Email sent!
+      confirm_sent: Confirmation email sent!
       verify_sent: Verification email sent!
+      manual_verification_sent: Email manually verified!
       full_delete_html: '@%{user} (email: %{email}, user_id: %{id}) has been fully deleted. If this is a GDPR delete, delete them from Mailchimp & Google Analytics and confirm on %{the_page}.'
       no_email: no email
       parameter_missing: Both subject and body are required!
@@ -142,6 +155,7 @@ en:
       updated_json: Success! %{username} has been updated.
       credits_added: Credits have been added!
       credits_removed: Credits have been removed.
+      tag_not_found: 'Tag "%{tag_name}" was not found'
     welcome_controller:
       thread_content: |
         ---

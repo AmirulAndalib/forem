@@ -1,6 +1,7 @@
 import { h, Component } from 'preact';
 import PropTypes from 'prop-types';
 import { FocusTrap } from '../shared/components/focusTrap';
+import { postReactions } from '../actionsPanel/services/reactions.js';
 import { EmailPreferencesForm } from './components/EmailPreferencesForm';
 import { FollowTags } from './components/FollowTags';
 import { FollowUsers } from './components/FollowUsers';
@@ -10,8 +11,7 @@ export class Onboarding extends Component {
   constructor(props) {
     super(props);
 
-    const url = new URL(window.location);
-    const previousLocation = url.searchParams.get('referrer');
+    this.recordBillboardConversion();
 
     const slides = [ProfileForm, FollowTags, FollowUsers, EmailPreferencesForm];
 
@@ -31,7 +31,6 @@ export class Onboarding extends Component {
         currentSlideIndex={index}
         key={index}
         communityConfig={props.communityConfig}
-        previousLocation={previousLocation}
       />
     ));
   }
@@ -43,8 +42,17 @@ export class Onboarding extends Component {
       this.setState({
         currentSlide: nextSlide,
       });
+    } else if (
+      localStorage &&
+      localStorage.getItem('last_interacted_billboard')
+    ) {
+      const obj = JSON.parse(localStorage.getItem('last_interacted_billboard'));
+      if (obj.path && obj.time && Date.parse(obj.time) > Date.now() - 900000) {
+        window.location.href = obj.path;
+      } else {
+        window.location.href = '/';
+      }
     } else {
-      // Redirect to the main feed at the end of onboarding.
       window.location.href = '/';
     }
   }
@@ -59,6 +67,56 @@ export class Onboarding extends Component {
     }
   }
 
+  recordBillboardConversion() {
+    if (!localStorage || !localStorage.getItem('last_interacted_billboard')) {
+      return;
+    }
+    const dataBody = JSON.parse(
+      localStorage.getItem('last_interacted_billboard'),
+    );
+
+    if (dataBody && dataBody['billboard_event']) {
+      dataBody['billboard_event']['category'] = 'signup';
+
+      const tokenMeta = document.querySelector("meta[name='csrf-token']");
+      const csrfToken = tokenMeta && tokenMeta.getAttribute('content');
+      window.fetch('/bb_tabulations', {
+        method: 'POST',
+        headers: {
+          'X-CSRF-Token': csrfToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(dataBody),
+        credentials: 'same-origin',
+      });
+    }
+
+    if (
+      dataBody &&
+      dataBody['billboard_event'] &&
+      dataBody['billboard_event']['article_id']
+    ) {
+      window
+        .fetch(`/api/articles/${dataBody['billboard_event']['article_id']}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'same-origin',
+        })
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.id) {
+            localStorage.setItem('onboarding_article', JSON.stringify(data));
+            postReactions({
+              reactable_type: 'Article',
+              category: 'like',
+              reactable_id: data.id,
+            });
+          }
+        });
+    }
+  }
   // TODO: Update main element id to enable skip link. See issue #1153.
   render() {
     const { currentSlide } = this.state;

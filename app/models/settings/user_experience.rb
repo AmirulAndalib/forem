@@ -4,7 +4,7 @@ module Settings
     self.table_name = :settings_user_experiences
 
     HEX_COLOR_REGEX = /\A#(\h{6}|\h{3})\z/
-    FEED_STRATEGIES = %w[basic large_forem_experimental].freeze
+    FEED_STRATEGIES = %w[basic configured large_forem_experimental].freeze
     FEED_STYLES = %w[basic rich compact].freeze
     COVER_IMAGE_FITS = %w[crop limit].freeze
 
@@ -27,6 +27,13 @@ module Settings
       },
       color_contrast: true
     }
+    setting :accent_background_color_hex, type: :string, default: nil, validates: {
+      format: {
+        with: HEX_COLOR_REGEX,
+        message: proc { I18n.t("models.settings.user_experience.message") }
+      },
+      color_contrast: true
+    }
 
     # cover images
     setting :cover_image_height, type: :integer, default: 420
@@ -41,5 +48,12 @@ module Settings
     setting :default_locale, type: :string, default: "en"
     setting :display_in_directory, type: :boolean, default: true
     setting :award_tag_minimum_score, type: :integer, default: 100
+
+    # Mobile App
+    setting :show_mobile_app_banner, type: :boolean, default: true
+
+    # Head and footer content
+    setting :head_content, type: :string, default: ""
+    setting :bottom_of_body_content, type: :string, default: ""
   end
 end

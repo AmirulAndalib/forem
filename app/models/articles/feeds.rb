@@ -12,7 +12,8 @@ module Articles
     #       into an administrative setting.  Hence, I want to keep it
     #       a scalar to ease the implementation details of the admin
     #       setting.
-    NUMBER_OF_HOURS_TO_OFFSET_USERS_LATEST_ARTICLE_VIEWS = 18
+    NUMBER_OF_HOURS_TO_OFFSET_USERS_LATEST_ARTICLE_VIEWS =
+      (ApplicationConfig["NUMBER_OF_HOURS_TO_OFFSET_USERS_LATEST_ARTICLE_VIEWS"] || 18).to_i
 
     DEFAULT_USER_EXPERIENCE_LEVEL = 5
     DEFAULT_NEGATIVE_REACTION_THRESHOLD = -10
@@ -47,7 +48,9 @@ module Articles
       time_of_second_latest_page_view = user&.page_views&.second_to_last&.created_at
       return days_since_published.days.ago unless time_of_second_latest_page_view
 
-      time_of_second_latest_page_view - NUMBER_OF_HOURS_TO_OFFSET_USERS_LATEST_ARTICLE_VIEWS.hours
+      # If they have a page view *well in the past*, let's go max 18 days look back.
+      time_of_second_latest_page_view = 18.days.ago if time_of_second_latest_page_view < 18.days.ago
+      time_of_second_latest_page_view - number_of_hours_to_offset_users_latest_article_views.hours
     end
 
     # Get the properly configured feed for the given user (and other parameters).
@@ -59,7 +62,7 @@ module Articles
     # @param tag [NilClass, String] not used but carried forward for interface conformance
     #
     # @return [Articles::Feeds::VariantQuery]
-    def self.feed_for(controller:, user:, number_of_articles:, page:, tag:)
+    def self.feed_for(controller:, user:, number_of_articles:, page:, tag:, type_of: "discover")
       variant = AbExperiment.get_feed_variant_for(controller: controller, user: user)
 
       VariantQuery.build_for(
@@ -68,6 +71,7 @@ module Articles
         number_of_articles: number_of_articles,
         page: page,
         tag: tag,
+        type_of: type_of
       )
     end
 
@@ -76,6 +80,10 @@ module Articles
     # @return [Articles::Feeds::LeverCatalogBuilder]
     def self.lever_catalog
       LEVER_CATALOG
+    end
+
+    def self.number_of_hours_to_offset_users_latest_article_views
+      (ApplicationConfig["NUMBER_OF_HOURS_TO_OFFSET_USERS_LATEST_ARTICLE_VIEWS"] || 18).to_i
     end
 
     # rubocop:disable Metrics/BlockLength
@@ -92,7 +100,25 @@ module Articles
       order_by_lever(:final_order_by_feed_success_score,
                      label: "Order by feed success score",
                      order_by_fragment: "articles.feed_success_score DESC")
-
+      order_by_lever(:final_order_by_feed_success_score_minus_clickbait_score,
+                     label: "Order by feed success score minus clickbait score",
+                     order_by_fragment: "articles.feed_success_score - articles.clickbait_score DESC")
+      order_by_lever(:final_order_by_feed_success_score_minus_half_of_clickbait_score,
+                     label: "Order by feed success score minus half of clickbait score",
+                     order_by_fragment: "articles.feed_success_score - (articles.clickbait_score / 2) DESC")
+      order_by_lever(:final_order_by_feed_success_score_minus_one_tenth_of_clickbait_score,
+                     label: "Order by feed success score minus one tenth of clickbait score",
+                     order_by_fragment: "articles.feed_success_score - (articles.clickbait_score / 10) DESC")
+      order_by_lever(:final_order_by_feed_success_score_minus_clickbait_score_with_randomness,
+                     label: "Order by feed success score minus clickbait score with a randomization factor",
+                     order_by_fragment:
+                      "(articles.feed_success_score - articles.clickbait_score) *
+                      article_relevancies.randomized_value DESC")
+      order_by_lever(:final_order_by_feed_success_score_minus_half_of_clickbait_score_with_small_randomness,
+                     label: "Order by feed success score minus half of clickbait score with a randomization factor",
+                     order_by_fragment:
+                       "(articles.feed_success_score - (articles.clickbait_score / 2)) +
+                       (article_relevancies.randomized_value / 3) DESC")
       order_by_lever(:final_order_by_feed_success_score_and_primary_score,
                      label: "Order by feed success score and primary score",
                      order_by_fragment: "((articles.feed_success_score + 0.01) * (articles.score / 10)) DESC")
@@ -355,6 +381,7 @@ module Articles
                       user_required: false,
                       select_fragment: "articles.score",
                       group_by_fragment: "articles.score")
+
       relevancy_lever(:language_match,
                       label: "Weight to give based on whether the language matches any of the user's languages",
                       range: "[0..1]", # 0 for no match, 1 for match
@@ -367,7 +394,27 @@ module Articles
                       joins_fragments: ["LEFT OUTER JOIN user_languages
                                          ON user_languages.user_id = :user_id"],
                       group_by_fragment: "articles.language")
+
+      relevancy_lever(:recommended_articles_match,
+                      label: "Weight to give based on whether the article is in the first non-expired recommendations",
+                      range: "[0..1]", # 0 for no match, 1 for match
+                      user_required: true,
+                      select_fragment: "CASE
+                                         WHEN COUNT(first_matching_list.id) = 0 THEN 0
+                                         WHEN articles.id = ANY(array_agg(first_matching_list.article_ids)
+                                         FILTER (WHERE first_matching_list.article_ids IS NOT NULL)) THEN 1
+                                         ELSE 0
+                                        END",
+                      joins_fragments: ["LEFT OUTER JOIN
+                                          (SELECT * FROM recommended_articles_lists
+                                           WHERE expires_at > CURRENT_TIMESTAMP
+                                           AND placement_area = 0
+                                           ORDER BY created_at ASC
+                                           LIMIT 1) AS first_matching_list
+                                        ON first_matching_list.user_id = :user_id"],
+                      group_by_fragment: "articles.id")
     end
+
     private_constant :LEVER_CATALOG
     # rubocop:enable Metrics/BlockLength
   end
