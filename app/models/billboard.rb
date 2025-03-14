@@ -4,21 +4,48 @@ class Billboard < ApplicationRecord
   resourcify
   belongs_to :creator, class_name: "User", optional: true
   belongs_to :audience_segment, optional: true
+  belongs_to :page, optional: true
 
-  # rubocop:disable Layout/LineLength
-  ALLOWED_PLACEMENT_AREAS = %w[sidebar_left sidebar_left_2 sidebar_right feed_first feed_second feed_third home_hero post_sidebar post_comments].freeze
-  # rubocop:enable Layout/LineLength
+  ALLOWED_PLACEMENT_AREAS = %w[sidebar_left
+                               sidebar_left_2
+                               sidebar_right
+                               sidebar_right_second
+                               sidebar_right_third
+                               feed_first
+                               feed_second
+                               feed_third
+                               home_hero
+                               footer
+                               page_fixed_bottom
+                               post_fixed_bottom
+                               post_body_bottom
+                               post_sidebar
+                               post_comments
+                               post_comments_mid
+                               digest_first
+                               digest_second].freeze
   ALLOWED_PLACEMENT_AREAS_HUMAN_READABLE = ["Sidebar Left (First Position)",
                                             "Sidebar Left (Second Position)",
-                                            "Sidebar Right (Home)",
+                                            "Sidebar Right (Home first position)",
+                                            "Sidebar Right (Home second position)",
+                                            "Sidebar Right (Home third position)",
                                             "Home Feed First",
                                             "Home Feed Second",
                                             "Home Feed Third",
                                             "Home Hero",
+                                            "Footer",
+                                            "Fixed Bottom (Page)",
+                                            "Fixed Bottom (Individual Post)",
+                                            "Below the post body",
                                             "Sidebar Right (Individual Post)",
-                                            "Below the comment section"].freeze
+                                            "Below the comment section",
+                                            "Midway through the comment section",
+                                            "Digest Email First",
+                                            "Digest Email Second"].freeze
 
   HOME_FEED_PLACEMENTS = %w[feed_first feed_second feed_third].freeze
+
+  COLOR_HEX_REGEXP = /\A#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})\z/
 
   MAX_TAG_LIST_SIZE = 25
   POST_WIDTH = 775
@@ -26,12 +53,15 @@ class Billboard < ApplicationRecord
   LOW_IMPRESSION_COUNT = 1_000
   RANDOM_RANGE_MAX_FALLBACK = 5
   NEW_AND_PRIORITY_RANGE_MAX_FALLBACK = 35
+  NEW_ONLY_RANGE_MAX_FALLBACK = 40
 
   attribute :target_geolocations, :geolocation_array
   enum display_to: { all: 0, logged_in: 1, logged_out: 2 }, _prefix: true
   enum type_of: { in_house: 0, community: 1, external: 2 }
   enum render_mode: { forem_markdown: 0, raw: 1 }
   enum template: { authorship_box: 0, plain: 1 }
+  enum :special_behavior, { nothing: 0, delayed: 1 }
+  enum :browser_context, { all_browsers: 0, desktop: 1, mobile_web: 2, mobile_in_app: 3 }
 
   belongs_to :organization, optional: true
   has_many :billboard_events, foreign_key: :display_ad_id, inverse_of: :billboard, dependent: :destroy
@@ -44,6 +74,7 @@ class Billboard < ApplicationRecord
   validates :audience_segment_type,
             inclusion: { in: AudienceSegment.type_ofs },
             allow_blank: true
+  validates :color, format: COLOR_HEX_REGEXP, allow_blank: true
   validate :valid_audience_segment_match,
            :validate_in_house_hero_ads,
            :valid_manual_audience_segment,
@@ -53,6 +84,8 @@ class Billboard < ApplicationRecord
   before_save :process_markdown
   after_save :generate_billboard_name
   after_save :refresh_audience_segment, if: :should_refresh_audience_segment?
+  after_save :update_links_with_bb_param
+  after_save :update_event_counts_when_taking_down, if: -> { being_taken_down? }
 
   scope :approved_and_published, -> { where(approved: true, published: true) }
 
@@ -62,10 +95,13 @@ class Billboard < ApplicationRecord
                      }
 
   scope :seldom_seen, ->(area) { where("impressions_count < ?", low_impression_count(area)).or(where(priority: true)) }
+  scope :new_only, ->(area) { where("impressions_count < ?", low_impression_count(area)) }
 
   self.table_name = "display_ads"
 
-  def self.for_display(area:, user_signed_in:, user_id: nil, article: nil, user_tags: nil, location: nil)
+  def self.for_display(area:, user_signed_in:, user_id: nil, article: nil, user_tags: nil,
+                       location: nil, cookies_allowed: false, page_id: nil, user_agent: nil,
+                       role_names: nil)
     permit_adjacent = article ? article.permit_adjacent_sponsors? : true
 
     billboards_for_display = Billboards::FilteredAdsQuery.call(
@@ -77,8 +113,12 @@ class Billboard < ApplicationRecord
       organization_id: article&.organization_id,
       permit_adjacent_sponsors: permit_adjacent,
       user_id: user_id,
+      page_id: page_id,
       user_tags: user_tags,
       location: location,
+      cookies_allowed: cookies_allowed,
+      user_agent: user_agent,
+      role_names: role_names,
     )
 
     case rand(99) # output integer from 0-99
@@ -92,7 +132,10 @@ class Billboard < ApplicationRecord
       # Here we sample from only billboards with fewer than 1000 impressions (with a fallback
       # if there are none of those, causing an extra query, but that shouldn't happen very often).
       relation = billboards_for_display.seldom_seen(area)
-      weighted_random_selection(relation) || billboards_for_display.sample
+      weighted_random_selection(relation, article&.id) || billboards_for_display.sample
+    when (new_and_priority_range_max(area)..new_only_range_max(area)) # 5% by default
+      # Here we sample from only billboards with fewer than 1000 impressions (with a fallback
+      billboards_for_display.new_only(area).sample || billboards_for_display.limit(rand(1..15)).sample
     else # large range, 65%
 
       # Ads that get engagement have a higher "success rate", and among this category, we sample from the top 15 that
@@ -105,24 +148,49 @@ class Billboard < ApplicationRecord
     end
   end
 
-  def self.weighted_random_selection(relation)
+  def self.weighted_random_selection(relation, target_article_id = nil)
     base_query = relation.to_sql
     random_val = rand.to_f
-
-    query = <<-SQL
-      WITH base AS (#{base_query}),
-      weighted AS (
-        SELECT *, weight,
-        SUM(weight) OVER () AS total_weight,
-        SUM(weight) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_weight
-        FROM base
-      )
-      SELECT *, running_weight, ? * total_weight AS random_value FROM weighted
-      WHERE running_weight >= ? * total_weight
-      ORDER BY running_weight ASC
-      LIMIT 1
-    SQL
-
+    if FeatureFlag.enabled?(:article_id_adjusted_weight)
+      condition = target_article_id.blank? ? "FALSE" : "#{target_article_id} = ANY(preferred_article_ids)"
+      query = <<-SQL
+        WITH base AS (#{base_query}),
+        weighted AS (
+          SELECT *,
+            CASE
+              WHEN #{condition} THEN weight * 10
+              ELSE weight
+            END AS adjusted_weight,
+          SUM(CASE
+                WHEN #{condition} THEN weight * 10
+                ELSE weight
+              END) OVER () AS total_weight,
+          SUM(CASE
+                WHEN #{condition} THEN weight * 10
+                ELSE weight
+              END) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_weight
+          FROM base
+        )
+        SELECT *, running_weight, ? * total_weight AS random_value FROM weighted
+        WHERE running_weight >= ? * total_weight
+        ORDER BY running_weight ASC
+        LIMIT 1
+      SQL
+    else
+      query = <<-SQL
+        WITH base AS (#{base_query}),
+        weighted AS (
+          SELECT *, weight,
+          SUM(weight) OVER () AS total_weight,
+          SUM(weight) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_weight
+          FROM base
+        )
+        SELECT *, running_weight, ? * total_weight AS random_value FROM weighted
+        WHERE running_weight >= ? * total_weight
+        ORDER BY running_weight ASC
+        LIMIT 1
+      SQL
+    end
     relation.find_by_sql([query, random_val, random_val]).first
   end
 
@@ -147,6 +215,28 @@ class Billboard < ApplicationRecord
       ApplicationConfig["SELDOM_SEEN_MAX"] ||
       NEW_AND_PRIORITY_RANGE_MAX_FALLBACK
     selected_number.to_i
+  end
+
+  def self.new_only_range_max(placement_area)
+    selected_number = ApplicationConfig["NEW_ONLY_MAX_FOR_#{placement_area.upcase}"] ||
+      ApplicationConfig["NEW_ONLY_MAX"] ||
+      NEW_ONLY_RANGE_MAX_FALLBACK
+    selected_number.to_i
+  end
+
+  def processed_html_final
+    # This is a final non-database-driven step to adjust processed html
+    # It is sort of a hack to avoid having to reprocess all articles
+    # It is currently only for this one cloudflare domain change
+    # It is duplicated across article, bullboard and comment where it is most needed
+    # In the future this could be made more customizable. For now it's just this one thing.
+    return processed_html if ApplicationConfig["PRIOR_CLOUDFLARE_IMAGES_DOMAIN"].blank? || ApplicationConfig["CLOUDFLARE_IMAGES_DOMAIN"].blank?
+
+    processed_html.gsub(ApplicationConfig["PRIOR_CLOUDFLARE_IMAGES_DOMAIN"], ApplicationConfig["CLOUDFLARE_IMAGES_DOMAIN"])
+  end
+
+  def type_of_display
+    type_of.gsub("external", "partner")
   end
 
   def human_readable_placement_area
@@ -196,7 +286,7 @@ class Billboard < ApplicationRecord
   end
   # rubocop:enable Style/OptionHash
 
-  # exclude_article_ids is an integer array, web inputs are comma-separated strings
+  # exclude_article_ids and preferred_article_ids are integer arrays, web inputs are comma-separated strings
   # ActiveRecord normalizes these in a bad way, so we are intervening
   def exclude_article_ids=(input)
     adjusted_input = input.is_a?(String) ? input.split(",") : input
@@ -204,7 +294,99 @@ class Billboard < ApplicationRecord
     write_attribute :exclude_article_ids, (adjusted_input || [])
   end
 
+  def preferred_article_ids=(input)
+    adjusted_input = input.is_a?(String) ? input.split(",") : input
+    adjusted_input = adjusted_input&.filter_map { |value| value.presence&.to_i }
+    write_attribute :preferred_article_ids, (adjusted_input || [])
+  end
+
+  def exclude_role_names=(input)
+    adjusted_input = input.is_a?(String) ? input.split(",") : input
+    write_attribute :exclude_role_names, (adjusted_input || [])
+  end
+
+  def target_role_names=(input)
+    adjusted_input = input.is_a?(String) ? input.split(",") : input
+    write_attribute :target_role_names, (adjusted_input || [])
+  end
+
+  def include_subforem_ids=(input)
+    adjusted_input = input.is_a?(String) ? input.split(",") : input
+    adjusted_input = adjusted_input&.filter_map { |value| value.presence&.to_i }
+    write_attribute :include_subforem_ids, (adjusted_input || [])
+  end
+
+  def style_string
+    return "" if color.blank?
+
+    if placement_area.include?("fixed_")
+      "border-top: calc(9px + 0.5vw) solid #{color}"
+    else
+      "border: 5px solid #{color}"
+    end
+  end
+
+  def update_links_with_bb_param
+    # Parse the processed_html with Nokogiri
+    full_html = "<html><head></head><body>#{processed_html}</body></html>"
+    doc = Nokogiri::HTML(full_html)
+    # Iterate over all the <a> tags
+    doc.css("a").each do |link|
+      href = link["href"]
+      next unless href.present? && href.start_with?("http", "/")
+
+      uri = URI.parse(href)
+      existing_params = URI.decode_www_form(uri.query || "")
+      # Check if 'bb' parameter exists and update it or append if not exists
+      bb_param_index = existing_params.find_index { |param| param[0] == "bb" }
+      if bb_param_index
+        existing_params[bb_param_index][1] = id.to_s # Update existing 'bb' parameter
+      else
+        existing_params << ["bb", id.to_s] # Append new 'bb' parameter
+      end
+      uri.query = URI.encode_www_form(existing_params)
+      link["href"] = uri.to_s
+    end
+
+    # Extract and save only the inner HTML of the body
+    modified_html = doc.at("body").inner_html
+
+    modified_html.gsub!(/href="([^"]*)&amp;([^"]*)"/, 'href="\1&\2"')
+
+    # Early return if the new HTML is the same as the old one
+    return if modified_html == processed_html
+
+    # Update the processed_html column with the new HTML
+    update_column(:processed_html, modified_html)
+  end
+
+  def score
+    0 # Just to allow this to repond to .score for abuse reports
+  end
+
   private
+
+  def update_event_counts_when_taking_down
+    num_impressions = billboard_events.impressions.sum(:counts_for)
+    num_clicks = billboard_events.clicks.sum(:counts_for)
+    conversion_success = billboard_events.all_conversion_types.sum(:counts_for) * 0.5
+    rate = (num_clicks + conversion_success).to_f / num_impressions
+
+    update_columns(
+      success_rate: rate,
+      clicks_count: num_clicks,
+      impressions_count: num_impressions
+    )
+  end
+
+  def being_taken_down?
+    # Only trigger if both approved and published were true before this save.
+    return false unless approved_before_last_save && published_before_last_save
+  
+    # Check if approved changed from true to false or published changed from true to false.
+    (saved_change_to_approved? && !approved) || (saved_change_to_published? && !published)
+  end
+  
 
   def generate_billboard_name
     return unless name.nil?

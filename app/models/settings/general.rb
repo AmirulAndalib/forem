@@ -1,8 +1,11 @@
 module Settings
   class General < Base
+    BANNER_USER_CONFIGS = %w[off logged_out_only all].freeze
+    BANNER_PLATFORM_CONFIGS = %w[off all all_web desktop_web mobile_web mobile_app].freeze
+
     self.table_name = "site_configs"
     SOCIAL_MEDIA_SERVICES = %w[
-      twitter facebook github instagram twitch mastodon
+      twitter facebook github instagram twitch mastodon youtube linkedin bluesky
     ].freeze
 
     # Forem Team
@@ -24,9 +27,16 @@ module Settings
     setting :contact_email, type: :string, default: ApplicationConfig["DEFAULT_EMAIL"]
     setting :periodic_email_digest, type: :integer, default: 2
 
-    # Google Analytics Tracking ID, e.g. UA-71991000-1
+    # Analytics and tracking
     setting :ga_tracking_id, type: :string, default: ApplicationConfig["GA_TRACKING_ID"]
     setting :ga_analytics_4_id, type: :string, default: ApplicationConfig["GA_ANALYTICS_4_ID"]
+    setting :ga_api_secret, type: :string, default: ApplicationConfig["GA_API_SECRET"]
+    setting :cookie_banner_user_context, type: :string, default: "off", validates: {
+      inclusion: { in: BANNER_USER_CONFIGS }
+    }
+    setting :coolie_banner_platform_context, type: :string, default: "off", validates: {
+      inclusion: { in: BANNER_PLATFORM_CONFIGS }
+    }
 
     # Ahoy Tracking
     setting :ahoy_tracking, type: :boolean, default: false
@@ -45,6 +55,7 @@ module Settings
 
     setting :original_logo, type: :string
     setting :resized_logo, type: :string
+    setting :resized_logo_aspect_ratio, type: :string
 
     setting :enable_video_upload, type: :boolean, default: false
 
@@ -69,7 +80,6 @@ module Settings
     }
 
     # Monetization
-    setting :payment_pointer, type: :string
     setting :stripe_api_key, type: :string, default: ApplicationConfig["STRIPE_SECRET_KEY"]
     setting :stripe_publishable_key, type: :string, default: ApplicationConfig["STRIPE_PUBLISHABLE_KEY"]
     # Billboard-related. Not sure this is the best place for it, but it's a start.
@@ -97,11 +107,15 @@ module Settings
       github: nil,
       instagram: nil,
       twitch: nil,
-      mastodon: nil
+      mastodon: nil,
+      youtube: nil,
+      linkedin: nil,
+      bluesky: nil
     }
     setting :twitter_hashtag, type: :string
 
     # Tags
+    setting :display_sidebar_active_discussions, type: :boolean, default: true
     setting :sidebar_tags, type: :array, default: %w[]
 
     # Broadcast
@@ -129,8 +143,20 @@ module Settings
     setting :onboarding_newsletter_opt_in_head
     setting :onboarding_newsletter_opt_in_subhead
 
+    setting :geos_with_allowed_default_email_opt_in, type: :array, default: %w[]
+
     setting :default_content_language, type: :string, default: "en",
                                        validates: { inclusion: Languages::Detection.codes }
+
+    # Algolia
+    setting :algolia_application_id, type: :string, default: ApplicationConfig["ALGOLIA_APPLICATION_ID"]
+    setting :algolia_api_key, type: :string, default: ApplicationConfig["ALGOLIA_API_KEY"]
+    setting :algolia_search_only_api_key, type: :string, default: ApplicationConfig["ALGOLIA_SEARCH_ONLY_API_KEY"]
+    setting :display_algolia_branding, type: :boolean, default: ApplicationConfig["ALGOLIA_DISPLAY_BRANDING"] == "true"
+
+    def self.algolia_search_enabled?
+      algolia_application_id.present? && algolia_search_only_api_key.present? && algolia_api_key.present?
+    end
 
     def self.custom_newsletter_configured?
       onboarding_newsletter_content_processed_html.present? &&

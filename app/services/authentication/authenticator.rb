@@ -106,11 +106,15 @@ module Authentication
 
     def proper_user(identity)
       if current_user
+        Rails.logger.debug { "Current user exists: #{current_user.id}" }
         current_user
       elsif identity.user
+        Rails.logger.debug { "Identity user found: #{identity.user.id}" }
         identity.user
       elsif provider.user_email.present?
-        User.find_by(email: provider.user_email)
+        user = User.find_by(email: provider.user_email)
+        Rails.logger.debug { "User found by email: #{user&.id}" }
+        user
       end
     end
 
@@ -119,9 +123,9 @@ module Authentication
       suspended_user = Users::SuspendedUsername.previously_suspended?(username)
       raise ::Authentication::Errors::PreviouslySuspended if suspended_user
 
-      existing_user = User.where(
+      existing_user = User.find_by(
         provider.user_username_field => username,
-      ).take
+      )
       return existing_user if existing_user
 
       User.new.tap do |user|
@@ -133,7 +137,7 @@ module Authentication
 
         # The user must be saved in the database before
         # we assign the user to a new identity.
-        user.save!
+        user.new_record? ? user.save! : user.save # Throw excption if new record.
       end
     end
 
@@ -149,7 +153,7 @@ module Authentication
     end
 
     def update_user(user)
-      return user if user.suspended?
+      return user if user.spam_or_suspended?
 
       user.tap do |model|
         model.unlock_access! if model.access_locked?

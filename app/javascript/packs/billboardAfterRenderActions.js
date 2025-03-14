@@ -42,6 +42,18 @@ export function executeBBScripts(el) {
   }
 }
 
+export function implementSpecialBehavior(element) {
+  if (
+    element.querySelector('.js-billboard') &&
+    element.querySelector('.js-billboard').dataset.special === 'delayed'
+  ) {
+    element.classList.add('hidden');
+    setTimeout(() => {
+      showDelayed();
+    }, 10000);
+  }
+}
+
 export function observeBillboards() {
   const observer = new IntersectionObserver(
     (entries) => {
@@ -51,7 +63,7 @@ export function observeBillboards() {
           if (entry.intersectionRatio >= 0.25) {
             setTimeout(() => {
               trackAdImpression(elem);
-            }, 1);
+            }, 200);
           }
         }
       });
@@ -64,9 +76,16 @@ export function observeBillboards() {
   );
 
   document.querySelectorAll('[data-display-unit]').forEach((ad) => {
+    const currentPath = window.location.pathname;
     observer.observe(ad);
     ad.removeEventListener('click', trackAdClick, false);
-    ad.addEventListener('click', () => trackAdClick(ad));
+    ad.addEventListener('click', () => trackAdClick(ad, event, currentPath));
+  });
+}
+
+function showDelayed() {
+  document.querySelectorAll("[data-special='delayed']").forEach((el) => {
+    el.closest('.hidden').classList.remove('hidden');
   });
 }
 
@@ -93,7 +112,7 @@ function trackAdImpression(adBox) {
   };
 
   window
-    .fetch('/billboard_events', {
+    .fetch('/bb_tabulations', {
       method: 'POST',
       headers: {
         'X-CSRF-Token': csrfToken,
@@ -107,7 +126,26 @@ function trackAdImpression(adBox) {
   adBox.dataset.impressionRecorded = true;
 }
 
-function trackAdClick(adBox) {
+function trackAdClick(adBox, event, currentPath) {
+  if (!event.target.closest('a')) {
+    return;
+  }
+
+  const dataBody = {
+    billboard_event: {
+      billboard_id: adBox.dataset.id,
+      context_type: adBox.dataset.contextType,
+      category: adBox.dataset.categoryClick,
+      article_id: adBox.dataset.articleId,
+    },
+  };
+
+  if (localStorage) {
+    dataBody['path'] = currentPath;
+    dataBody['time'] = new Date();
+    localStorage.setItem('last_interacted_billboard', JSON.stringify(dataBody));
+  }
+
   const isBot =
     /bot|google|baidu|bing|msn|duckduckbot|teoma|slurp|yandex/i.test(
       navigator.userAgent,
@@ -120,15 +158,7 @@ function trackAdClick(adBox) {
   const tokenMeta = document.querySelector("meta[name='csrf-token']");
   const csrfToken = tokenMeta && tokenMeta.getAttribute('content');
 
-  const dataBody = {
-    billboard_event: {
-      billboard_id: adBox.dataset.id,
-      context_type: adBox.dataset.contextType,
-      category: adBox.dataset.categoryClick,
-    },
-  };
-
-  window.fetch('/billboard_events', {
+  window.fetch('/bb_tabulations', {
     method: 'POST',
     headers: {
       'X-CSRF-Token': csrfToken,

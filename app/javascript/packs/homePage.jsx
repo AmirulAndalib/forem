@@ -6,7 +6,7 @@ import {
   initializeBillboardVisibility,
 } from '../packs/billboardAfterRenderActions';
 import { observeFeedElements } from '../packs/feedEvents';
-import { setupBillboardDropdown } from '@utilities/billboardDropdown';
+import { setupBillboardInteractivity } from '@utilities/billboardInteractivity';
 import { trackCreateAccountClicks } from '@utilities/ahoy/trackEvents';
 
 /* global userData */
@@ -18,6 +18,8 @@ const frontPageFeedPathNames = new Map([
   ['/top/year', 'year'],
   ['/top/infinity', 'infinity'],
   ['/latest', 'latest'],
+  ['/following', ''],
+  ['/following/latest', 'latest']
 ]);
 
 /**
@@ -75,28 +77,29 @@ function renderSidebar() {
   if (
     sidebarContainer &&
     screen.width >= 640 &&
-    (pathname === '/' || pathname === '/latest' || pathname.includes('/top/'))
+    (pathname === '/' || pathname === '/latest' || pathname.includes('/top/') || pathname.includes('/discover') || pathname.includes('/following'))
   ) {
     window
       .fetch('/sidebars/home')
       .then((res) => res.text())
       .then((response) => {
         sidebarContainer.innerHTML = response;
-        setupBillboardDropdown();
+        setupBillboardInteractivity();
       });
   }
 }
 
 const feedTimeFrame = frontPageFeedPathNames.get(window.location.pathname);
+const homeFeedEl = document.getElementById('homepage-feed');
 
-if (!document.getElementById('featured-story-marker')) {
+if (document.getElementById('sidebar-nav-followed-tags')) {
   const waitingForDataLoad = setInterval(() => {
     const { user = null, userStatus } = document.body.dataset;
     if (userStatus === 'logged-out') {
       return;
     }
 
-    if (userStatus === 'logged-in' && user !== null) {
+    if (userStatus === 'logged-in' && user !== null && homeFeedEl) {
       clearInterval(waitingForDataLoad);
       if (document.getElementById('rendered-article-feed')) {
         return;
@@ -105,7 +108,7 @@ if (!document.getElementById('featured-story-marker')) {
         const callback = () => {
           initializeBillboardVisibility();
           observeBillboards();
-          setupBillboardDropdown();
+          setupBillboardInteractivity();
           observeFeedElements();
         };
 
@@ -128,7 +131,7 @@ if (!document.getElementById('featured-story-marker')) {
           const callback = () => {
             initializeBillboardVisibility();
             observeBillboards();
-            setupBillboardDropdown();
+            setupBillboardInteractivity();
             observeFeedElements();
           };
 

@@ -5,8 +5,8 @@ RSpec.describe "Reactions" do
   let(:article) { create(:article, user: user) }
   let(:comment) { create(:comment, commentable: article) }
 
-  let(:max_age) { 1.day.to_i }
-  let(:stale_if_error) { 26_400 }
+  let(:max_age) { 2.weeks.to_i }
+  let(:stale_if_error) { 1.day.to_i }
 
   describe "GET /reactions?article_id=:article_id" do
     before do
@@ -215,6 +215,23 @@ RSpec.describe "Reactions" do
       it "has success http status" do
         post "/reactions", params: article_params
         expect(response).to be_successful
+      end
+
+      it "sends Algolia insight event" do
+        # Set up the expectation before making the request
+        allow(Settings::General).to receive_messages(algolia_application_id: "test", algolia_api_key: "test")
+        algolia_service_instance = instance_double(AlgoliaInsightsService)
+        allow(AlgoliaInsightsService).to receive(:new).and_return(algolia_service_instance)
+        allow(algolia_service_instance).to receive(:track_event)
+        post "/reactions", params: article_params
+        expect(algolia_service_instance).to have_received(:track_event).with(
+          "conversion",
+          "Reaction Created",
+          user.id,
+          article.id,
+          "Article_#{Rails.env}",
+          instance_of(Integer),
+        )
       end
     end
 

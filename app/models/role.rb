@@ -11,15 +11,17 @@ class Role < ApplicationRecord
     super_admin
     support_admin
     suspended
+    spam
     tag_moderator
     tech_admin
     trusted
     warned
     limited
+    base_subscriber
   ].freeze
 
   ROLES.each do |role|
-    define_method("#{role}?") do
+    define_method(:"#{role}?") do
       name == role
     end
   end

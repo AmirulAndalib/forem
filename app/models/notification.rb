@@ -26,13 +26,30 @@ class Notification < ApplicationRecord
   }
   scope :unread, -> { where(read: false) }
 
+  scope :from_subforem, lambda { |subforem_id = nil|
+    subforem_id ||= RequestStore.store[:subforem_id]
+    if subforem_id.present? && subforem_id == RequestStore.store[:root_subforem_id]
+      # No additional conditions; just return the current scope
+      where(nil)
+    elsif [0, RequestStore.store[:default_subforem_id]].include?(subforem_id.to_i)
+      where("notifications.subforem_id IN (?) OR notifications.subforem_id IS NULL", [nil, subforem_id, RequestStore.store[:default_subforem_id].to_i])
+    else
+      where("notifications.subforem_id = ?", subforem_id)
+    end
+  }
+
   class << self
     def send_new_follower_notification(follow, is_read: false)
       return unless follow && Follow.need_new_follower_notification_for?(follow.followable_type)
       return if follow.followable_type == "User" && UserBlock.blocking?(follow.followable_id, follow.follower_id)
 
       follow_data = Notifications::NewFollower::FollowData.coerce(follow).to_h
-      Notifications::NewFollowerWorker.perform_async(follow_data, is_read)
+      follower = User.find_by(id: follow.follower_id)
+      if follower.registered_at > 48.hours.ago # Delay the job 60 minutes to check for spam users if new user
+        Notifications::NewFollowerWorker.perform_in(1.hour, follow_data, is_read)
+      else
+        Notifications::NewFollowerWorker.perform_async(follow_data, is_read)
+      end
     end
 
     def send_new_follower_notification_without_delay(follow, is_read: false)
@@ -44,7 +61,7 @@ class Notification < ApplicationRecord
     end
 
     def send_to_mentioned_users_and_followers(notifiable, _action = nil)
-      return unless notifiable.is_a?(Article) && notifiable.published?
+      return unless notifiable.is_a?(Article) && notifiable.published? && notifiable.type_of == "full_post"
 
       # We need to create associated mentions inline because they need to exist _before_ creating any
       # other Article-related notifications. This ensures that users will not receive a second notification for the

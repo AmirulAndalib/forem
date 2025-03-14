@@ -75,6 +75,14 @@ RSpec.describe "Moderations" do
       expect { get "/mod/dsdsdsweweedsdseweww" }.to raise_exception(ActiveRecord::RecordNotFound)
     end
 
+    it "only includes articles which do not have [Boost] in as title" do
+      non_boost_article = create(:article, title: "Not Boost")
+      boost_article = create(:article, title: "[Boost]")
+      get "/mod"
+      expect(response.body).to include(CGI.escapeHTML(non_boost_article.title))
+      expect(response.body).not_to include(CGI.escapeHTML(boost_article.title))
+    end
+
     it "renders not_found when an article can't be found" do
       expect do
         get "/#{trusted_user.username}/dsdsdsweweedsdseweww/mod/"
@@ -173,26 +181,43 @@ RSpec.describe "Moderations" do
     end
 
     context "when user is trusted" do
+      let!(:first_article) { create(:article) }
+      let!(:second_article) { create(:article, score: -12) }
+      let(:spamer) { create(:user, :spam) }
+      let(:suspended_user) { create(:user, :suspended) }
+
       before do
         sign_in trusted_user
       end
 
       it "does not show articles the user has already reacted to for inbox" do
-        first_article = create(:article)
-        second_article = create(:article, score: -12)
         get "/mod"
 
         expect(response.body).to include(CGI.escapeHTML(first_article.title))
         expect(response.body).not_to include(CGI.escapeHTML(second_article.title))
       end
 
-      it "shows all articles on latest" do
-        first_article = create(:article)
-        second_article = create(:article, score: -12)
+      it "doesn't include spam and suspended articles" do
+        spam_article = create(:article, user: spamer, score: 0)
+        suspended_article = create(:article, user: suspended_user, score: 0)
+
+        get "/mod"
+
+        expect(response.body).to include(CGI.escapeHTML(first_article.title))
+        expect(response.body).not_to include(CGI.escapeHTML(spam_article.title))
+        expect(response.body).not_to include(CGI.escapeHTML(suspended_article.title))
+      end
+
+      it "includes non-spam articles and doesn't include spam/suspended articles on latest" do
+        spam_article = create(:article, user: spamer, score: 0)
+        suspended_article = create(:article, user: suspended_user, score: 0)
+
         get "/mod?state=latest"
 
         expect(response.body).to include(CGI.escapeHTML(first_article.title))
         expect(response.body).to include(CGI.escapeHTML(second_article.title))
+        expect(response.body).not_to include(CGI.escapeHTML(spam_article.title))
+        expect(response.body).not_to include(CGI.escapeHTML(suspended_article.title))
       end
     end
   end
@@ -275,6 +300,33 @@ RSpec.describe "Moderations" do
         expect do
           patch "/admin/member_manager/users/#{article.user_id}/user_status",
                 params: { user: { user_status: "Suspend", new_note: "Test note" } }
+        end.to change(AuditLog, :count).by(1)
+      end
+    end
+
+    context "when adding the spam role to the user" do
+      it "creates a note on a user when note content is provided" do
+        note_content = "Spam acount"
+        expect do
+          patch "/admin/member_manager/users/#{article.user_id}/user_status",
+                params: { user: { user_status: "Spam", note_for_current_role: note_content } }
+        end.to change(Note, :count).by(1)
+        expect(Note.last.content).to eq(note_content)
+      end
+
+      it "creates a default note on a user when note content isn't provided" do
+        expected_note = "#{super_mod.username} updated #{article.user.username}"
+        expect do
+          patch "/admin/member_manager/users/#{article.user_id}/user_status",
+                params: { user: { user_status: "Spam" } }
+        end.to change(Note, :count).by(1)
+        expect(Note.last.content).to eq(expected_note)
+      end
+
+      it "creates an AuditLog for the action taken" do
+        expect do
+          patch "/admin/member_manager/users/#{article.user_id}/user_status",
+                params: { user: { user_status: "Spam", new_note: "Test note" } }
         end.to change(AuditLog, :count).by(1)
       end
     end

@@ -118,6 +118,10 @@ fr:
             description: Google Universal Analytics Tracking ID, e.g. UA-XXXXXXXX-1
           ga_analytics_4:
             description: Google Analytics 4 Measurement ID, e.g. G-XXXXXXXXX
+          cookie_banner_user_context:
+            description: Used to determine whether the cookie banner should be shown based on user context (i.e. logged in or not)
+          coolie_banner_platform_context:
+            description: Used to determine whether the cookie banner should be shown based on platform (i.e. web/mobile)
           hashtag:
             description: Used as the twitter hashtag of the community
             placeholder: '#DEVCommunity'
@@ -153,6 +157,9 @@ fr:
           onboarding_newsletter_opt_in_subhead:
             description: "Newsletter checkbox subheading"
             placeholder: "E.g., Rest assured, we respect your privacy. Your email will only be used for our newsletter and won't be shared with others."
+          geos_with_allowed_default_email_opt_in:
+            description: 'List of countries where the default email opt-in is allowed by admin'
+            placeholder: 'List of valid countries: comma separated, letters only e.g. US,CA'
           payment:
             description: 'Used for site-wide web monetization. See: https://github.com/forem/forem/pull/6345'
           periodic:
@@ -222,3 +229,9 @@ fr:
             description: Determines background/border of buttons etc. Must be dark enough to contrast with white text.
           tag_feed:
             description: Minimum score needed for a post to show up on default tag page.
+          head_content:
+            description: Content that will be appended to the bottom of the head tag on every page (WARNING — This will cache within the page request unevenly. Proceed with care).
+            placeholder: 'Leave empty if you do not want to add anything.'
+          bottom_of_body_content:
+            description: Content that will be appended to the bottom of the body tag on every page (WARNING — This will cache within the page request unevenly. Proceed with care).
+            placeholder: 'Leave empty if you do not want to add anything.'

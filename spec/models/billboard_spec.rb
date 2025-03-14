@@ -7,6 +7,72 @@ RSpec.describe Billboard do
 
   it_behaves_like "Taggable"
 
+  describe "#update_links_with_bb_param" do
+    let(:billboard) do
+      create(:billboard,
+             body_markdown: "Some content with [a link](https://example.com).",
+             processed_html: '<p>Some content with <a href="https://example.com">a link</a>.</p>')
+    end
+
+    it "modifies links to include the bb param with the model id" do
+      billboard.update_links_with_bb_param
+      # Expecting href with bb= (URL encoded format)
+      expect(billboard.processed_html).to include("href=\"https://example.com?bb=#{billboard.id}")
+    end
+
+    it "does not modify the processed_html if no links are present" do
+      no_links_html = "<p>Some content with no links.</p>"
+      billboard.update(processed_html: no_links_html)
+      billboard.update_links_with_bb_param
+      expect(billboard.processed_html).to eq(no_links_html)
+    end
+
+    it "Modifies instead of appending when bb already exists" do
+      html_with_bb = "<p>Check this <a href='https://example.com?bb=123'>link</a>.</p>"
+      billboard.update(processed_html: html_with_bb)
+      billboard.update_links_with_bb_param
+      # Expecting href with bb= and 123, encoded format for &
+      expect(billboard.processed_html).to include("href=\"https://example.com?bb=#{billboard.id}\"")
+    end
+
+    it "properly appends the bb param when the URL already contains query params" do
+      html_with_query = "<p>Check this <a href='https://example.com?foo=bar'>link</a>.</p>"
+      billboard.update(processed_html: html_with_query)
+      billboard.update_links_with_bb_param
+      # Expecting href with bb= and foo=bar, encoded format for &
+      expect(billboard.processed_html).to include('href="https://example.com?foo=bar&bb=')
+    end
+
+    it "does not modify non-http/https links" do
+      non_http_html = "<p>Check this <a href='mailto:test@example.com'>email link</a>.</p>"
+      billboard.update(processed_html: non_http_html)
+      billboard.update_links_with_bb_param
+      expect(billboard.processed_html).to eq("<p>Check this <a href=\"mailto:test@example.com\">email link</a>.</p>")
+    end
+
+    it "modifies relative links" do
+      html_with_query = "<p>Check this <a href='/example.com?foo=bar'>link</a>.</p>"
+      billboard.update(processed_html: html_with_query)
+      billboard.update_links_with_bb_param
+      # Expecting href with bb= and foo=bar, encoded format for &
+      expect(billboard.processed_html).to include('href="/example.com?foo=bar&bb=')
+    end
+  end
+
+  describe "after_save callback" do
+    it "calls #update_links_with_bb_param after save" do
+      # Set up the expectation
+      allow(billboard).to receive(:update_links_with_bb_param).and_call_original
+
+      # Update the markdown (which triggers processing of processed_html)
+      new_markdown = "Some content with [a new link](https://newexample.com)"
+      billboard.update(body_markdown: new_markdown)
+
+      # Check if the method was called
+      expect(billboard).to have_received(:update_links_with_bb_param).twice
+    end
+  end
+
   describe "validations" do
     describe "builtin validations" do
       subject { billboard }
@@ -131,14 +197,16 @@ RSpec.describe Billboard do
       username_ad = create(:billboard, body_markdown: "Hello! {% embed #{url}} %}")
       expect(username_ad.processed_html).to include("/#{user.username}")
       expect(username_ad.processed_html).to include("ltag__user__link")
+      # reverse allow unified embed
     end
   end
 
   context "when render_mode is set to raw" do
-    it "outputs processed html that matches the body input" do
-      raw_input = "<style>.bb { color: red }</style><div class=\"bb\">This is a raw div</div>"
+    it "outputs processed html that matches the body input with appended param for links" do
+      raw_input = "<style>.billyb { color: red }</style><div class=\"billyb\">This is a raw div <a href=\"https://example.com\">hello</a></div>"
       raw_billboard = create(:billboard, body_markdown: raw_input, render_mode: "raw")
-      expect(raw_billboard.processed_html).to eq raw_input
+      changed_input = "<style>.billyb { color: red }</style>\n<div class=\"billyb\">This is a raw div <a href=\"https://example.com?bb=#{raw_billboard.id}\">hello</a>\n</div>"
+      expect(raw_billboard.processed_html).to eq changed_input
     end
 
     it "still processes images in raw mode" do
@@ -553,36 +621,186 @@ RSpec.describe Billboard do
   end
 
   describe ".weighted_random_selection" do
-    it "samples with weights correctly" do
-      described_class.delete_all
-      bb1 = create(:billboard, weight: 5)
-      bb2 = create(:billboard, weight: 1)
-      bb3 = create(:billboard, weight: 1)
-      bb4 = create(:billboard, weight: 2)
-      bb5 = create(:billboard, weight: 1)
+    context "when no target_article_id is provided" do
+      it "samples with weights correctly" do
+        described_class.delete_all
+        bb1 = create(:billboard, weight: 5)
+        bb2 = create(:billboard, weight: 1)
+        bb3 = create(:billboard, weight: 1)
+        bb4 = create(:billboard, weight: 2)
+        bb5 = create(:billboard, weight: 1)
 
-      total_weight = 5 + 1 + 1 + 2 + 1 # 10
-      expected_probabilities = {
-        bb1.id => 5.0 / total_weight,
-        bb2.id => 1.0 / total_weight,
-        bb3.id => 1.0 / total_weight,
-        bb4.id => 2.0 / total_weight,
-        bb5.id => 1.0 / total_weight
-      }
+        total_weight = 5 + 1 + 1 + 2 + 1 # 10
+        expected_probabilities = {
+          bb1.id => 5.0 / total_weight,
+          bb2.id => 1.0 / total_weight,
+          bb3.id => 1.0 / total_weight,
+          bb4.id => 2.0 / total_weight,
+          bb5.id => 1.0 / total_weight
+        }
 
-      counts = Hash.new(0)
-      num_trials = 5_000
+        counts = Hash.new(0)
+        num_trials = 5_000
 
-      num_trials.times do
-        id = described_class.weighted_random_selection(described_class.all).id
-        counts[id] += 1
+        num_trials.times do
+          id = described_class.weighted_random_selection(described_class.all).id
+          counts[id] += 1
+        end
+
+        counts.each do |id, count|
+          observed_probability = count.to_f / num_trials
+          expected_probability = expected_probabilities[id]
+
+          expect(observed_probability).to be_within(0.025).of(expected_probability)
+        end
+      end
+    end
+
+    context "when a target_article_id is provided" do
+      it "favors records containing the target_article_id" do
+        allow(FeatureFlag).to receive(:enabled?).with(:article_id_adjusted_weight).and_return(true)
+        described_class.delete_all
+        target_article_id = 123
+        favored_weight_multiplier = 10
+
+        # Create billboards with different weights and article_ids
+        bb1 = create(:billboard, weight: 5, preferred_article_ids: [target_article_id])
+        bb2 = create(:billboard, weight: 1, preferred_article_ids: [])
+        bb3 = create(:billboard, weight: 1, preferred_article_ids: [target_article_id])
+        bb4 = create(:billboard, weight: 2, preferred_article_ids: [])
+        bb5 = create(:billboard, weight: 1, preferred_article_ids: [])
+
+        # Adjusted total weight accounting for the favored records
+        total_weight = (5 * favored_weight_multiplier) + 1 + (1 * favored_weight_multiplier) + 2 + 1
+        expected_probabilities = {
+          bb1.id => (5.0 * favored_weight_multiplier) / total_weight,
+          bb2.id => 1.0 / total_weight,
+          bb3.id => (1.0 * favored_weight_multiplier) / total_weight,
+          bb4.id => 2.0 / total_weight,
+          bb5.id => 1.0 / total_weight
+        }
+
+        counts = Hash.new(0)
+        num_trials = 5_000
+
+        num_trials.times do
+          id = described_class.weighted_random_selection(described_class.all, target_article_id).id
+          counts[id] += 1
+        end
+
+        counts.each do |id, count|
+          observed_probability = count.to_f / num_trials
+          expected_probability = expected_probabilities[id]
+
+          expect(observed_probability).to be_within(0.025).of(expected_probability)
+        end
+      end
+    end
+  end
+
+  describe "#processed_html_final" do
+    let(:prior_domain) { "https://old.cdn.com" }
+    let(:new_domain) { "https://new.cdn.com" }
+
+    before do
+      allow(ApplicationConfig).to receive(:[]).with("PRIOR_CLOUDFLARE_IMAGES_DOMAIN").and_return(prior_domain)
+      allow(ApplicationConfig).to receive(:[]).with("CLOUDFLARE_IMAGES_DOMAIN").and_return(new_domain)
+    end
+
+    context "when the prior domain and new domain are both present" do
+      it "replaces instances of the prior domain with the new domain" do
+        billboard.processed_html = "Here is an image <img src='#{prior_domain}/image1.jpg'> and another <img src='#{prior_domain}/image2.jpg'>."
+        expect(billboard.processed_html_final).to eq("Here is an image <img src='#{new_domain}/image1.jpg'> and another <img src='#{new_domain}/image2.jpg'>.")
       end
 
-      counts.each do |id, count|
-        observed_probability = count.to_f / num_trials
-        expected_probability = expected_probabilities[id]
+      it "does not modify text if the prior domain is not present in the processed_html" do
+        billboard.processed_html = "Content with no images or domains."
+        expect(billboard.processed_html_final).to eq("Content with no images or domains.")
+      end
+    end
 
-        expect(observed_probability).to be_within(0.025).of(expected_probability)
+    context "when the application configuration for the domains is blank" do
+      before do
+        allow(ApplicationConfig).to receive(:[]).with("PRIOR_CLOUDFLARE_IMAGES_DOMAIN").and_return(nil)
+        allow(ApplicationConfig).to receive(:[]).with("CLOUDFLARE_IMAGES_DOMAIN").and_return(nil)
+      end
+
+      it "returns the original processed_html unchanged" do
+        billboard.processed_html = "Content with the old domain #{prior_domain}."
+        expect(billboard.processed_html_final).to eq("Content with the old domain #{prior_domain}.")
+      end
+    end
+  end
+
+  describe "#update_event_counts_when_taking_down" do
+    let!(:active_billboard) { create(:billboard, published: true, approved: true) }
+    let!(:impression_event) { create(:billboard_event, billboard: active_billboard, category: "impression", counts_for: 2) }
+    let!(:click_event) { create(:billboard_event, billboard: active_billboard, category: "click", counts_for: 1) }
+    let!(:conversion_event) do
+      create(:billboard_event, billboard: active_billboard, category: "conversion", counts_for: 3)
+    end
+
+    context "when transitioning from active to down" do
+      it "triggers the callback when only approved is set to false" do
+        expect(active_billboard).to receive(:update_event_counts_when_taking_down).and_call_original
+        active_billboard.update(approved: false)
+        active_billboard.reload
+
+        expect(active_billboard.impressions_count).to eq(2) # from impression_event
+        expect(active_billboard.clicks_count).to eq(1)       # from click_event
+        expected_success_rate = (1 + (3 * 0.5)).to_f / 2      # (clicks + conversion_success) / impressions
+        expect(active_billboard.success_rate).to eq(expected_success_rate)
+      end
+
+      it "triggers the callback when only published is set to false" do
+        expect(active_billboard).to receive(:update_event_counts_when_taking_down).and_call_original
+        active_billboard.update(published: false)
+        active_billboard.reload
+
+        expect(active_billboard.impressions_count).to eq(2)
+        expect(active_billboard.clicks_count).to eq(1)
+        expected_success_rate = (1 + (3 * 0.5)).to_f / 2
+        expect(active_billboard.success_rate).to eq(expected_success_rate)
+      end
+
+      it "triggers the callback when both approved and published are set to false" do
+        expect(active_billboard).to receive(:update_event_counts_when_taking_down).and_call_original
+        active_billboard.update(approved: false, published: false)
+        active_billboard.reload
+
+        expect(active_billboard.impressions_count).to eq(2)
+        expect(active_billboard.clicks_count).to eq(1)
+        expected_success_rate = (1 + (3 * 0.5)).to_f / 2
+        expect(active_billboard.success_rate).to eq(expected_success_rate)
+      end
+    end
+
+    context "when the billboard is already down" do
+      before do
+        # Transition the billboard to a down state
+        active_billboard.update(approved: false, published: false)
+      end
+
+      it "does not trigger the callback if approved remains false" do
+        expect(active_billboard).not_to receive(:update_event_counts_when_taking_down)
+        active_billboard.update(approved: false)
+      end
+
+      it "does not trigger the callback if published remains false" do
+        expect(active_billboard).not_to receive(:update_event_counts_when_taking_down)
+        active_billboard.update(published: false)
+      end
+
+      it "does not trigger the callback when updating unrelated attributes" do
+        expect(active_billboard).not_to receive(:update_event_counts_when_taking_down)
+        active_billboard.update(name: "New Billboard Name")
+      end
+    end
+
+    context "when no state changes occur" do
+      it "does not trigger the callback if both approved and published remain active" do
+        expect(active_billboard).not_to receive(:update_event_counts_when_taking_down)
+        active_billboard.update(name: "Updated Billboard")
       end
     end
   end
